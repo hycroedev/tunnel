@@ -14,6 +14,7 @@ setup() {
     ssh-keygen -t ed25519 -f "$KEY_FILE" -N "" <<< y >/dev/null 2>&1
 
     echo "📦 Installing sshpass..."
+    apt-get update >/dev/null 2>&1
     apt-get install -y sshpass >/dev/null 2>&1
 
     echo "📤 Copying SSH key to $USER@$SERVER ..."
@@ -25,18 +26,23 @@ add_tunnel() {
     LOCAL_PORT=$1
     TMPFILE=$(mktemp)
 
-    ssh -i "$KEY_FILE" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -N -R 0:localhost:$LOCAL_PORT $USER@$SERVER >"$TMPFILE" 2>&1 &
-    SSH_PID=$!
+    # Use GatewayPorts and AllowTcpForwarding explicitly
+    ssh -i "$KEY_FILE" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+        -o GatewayPorts=yes -o ExitOnForwardFailure=yes \
+        -N -R 0:localhost:$LOCAL_PORT $USER@$SERVER >"$TMPFILE" 2>&1 &
 
+    SSH_PID=$!
     sleep 2
+
     REMOTE_PORT=$(grep -oE 'Allocated port [0-9]+' "$TMPFILE" | awk '{print $3}')
 
     if [ -n "$REMOTE_PORT" ]; then
         echo "$LOCAL_PORT $REMOTE_PORT $SSH_PID" >>"$DB_FILE"
         echo "✅ Port $LOCAL_PORT forwarded → $SERVER:$REMOTE_PORT"
     else
-        echo "❌ Failed to allocate remote port. Check connection."
+        echo "❌ Failed to allocate remote port. Check SSH server settings."
         kill $SSH_PID 2>/dev/null
+        cat "$TMPFILE"
     fi
     rm -f "$TMPFILE"
 }
