@@ -3,93 +3,119 @@
 DB_FILE="/tmp/port_tunnels.db"
 SERVER="89.168.49.205"
 USER="tunnel"
-PASS_FILE="$HOME/.ssh/.tunnel_pass"
-KEY_FILE="$HOME/.ssh/tunnel_key"
 
-mkdir -p "$(dirname $DB_FILE)"
+mkdir -p /tmp
 touch "$DB_FILE"
 
-setup() {
-    echo "🔑 Generating SSH key..."
-    ssh-keygen -t ed25519 -f "$KEY_FILE" -N "" <<< y >/dev/null 2>&1
-
-    echo "📦 Installing sshpass..."
-    apt-get update >/dev/null 2>&1
-    apt-get install -y sshpass >/dev/null 2>&1
-
-    echo "📤 Copying SSH key to $USER@$SERVER ..."
-    sshpass -f "$PASS_FILE" ssh-copy-id -i "$KEY_FILE.pub" -o StrictHostKeyChecking=no $USER@$SERVER
-    echo "✅ Key copied successfully!"
-}
-
 add_tunnel() {
-    LOCAL_PORT=$1
-    TMPFILE=$(mktemp)
+  LOCAL_PORT=$1
+  TMPFILE=$(mktemp)
 
-    # Use GatewayPorts and AllowTcpForwarding explicitly
-    ssh -i "$KEY_FILE" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-        -o GatewayPorts=yes -o ExitOnForwardFailure=yes \
-        -N -R 0:localhost:$LOCAL_PORT $USER@$SERVER >"$TMPFILE" 2>&1 &
+  # reverse tunnel with random remote port (0:)
+  ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+      -N -R 0:localhost:$LOCAL_PORT $USER@$SERVER >"$TMPFILE" 2>&1 &
+  SSH_PID=$!
 
-    SSH_PID=$!
-    sleep 2
-
-    REMOTE_PORT=$(grep -oE 'Allocated port [0-9]+' "$TMPFILE" | awk '{print $3}')
-
-    if [ -n "$REMOTE_PORT" ]; then
-        echo "$LOCAL_PORT $REMOTE_PORT $SSH_PID" >>"$DB_FILE"
-        echo "✅ Port $LOCAL_PORT forwarded → $SERVER:$REMOTE_PORT"
-    else
-        echo "❌ Failed to allocate remote port. Check SSH server settings."
-        kill $SSH_PID 2>/dev/null
-        cat "$TMPFILE"
+  # wait up to 5s for "Allocated port ..." message
+  for i in {1..10}; do
+    if grep -q "Allocated port" "$TMPFILE"; then
+      break
     fi
-    rm -f "$TMPFILE"
-}
+    sleep 0.5
+  done
 
-list_tunnels() {
-    if [ ! -s "$DB_FILE" ]; then
-        echo "ℹ️ No active tunnels."
-        return
-    fi
-    echo "Active tunnels:"
-    cat "$DB_FILE"
+  if grep -q "Allocated port" "$TMPFILE"; then
+    REMOTE_PORT=$(grep "Allocated port" "$TMPFILE" | grep -oP '\d{4,5}' | head -n1)
+    echo "$LOCAL_PORT:$REMOTE_PORT:$SSH_PID" >> "$DB_FILE"
+    echo "✅ tunnel ok: localhost:$LOCAL_PORT ➜ $SERVER:$REMOTE_PORT (pid $SSH_PID)"
+  else
+    echo "❌ tunnel failed, reason:"
+    grep -v "^Warning:" "$TMPFILE"
+    kill "$SSH_PID" 2>/dev/null
+  fi
+  rm -f "$TMPFILE"
 }
 
 stop_tunnel() {
-    PORT=$1
-    LINE=$(grep "^$PORT " "$DB_FILE")
-    if [ -n "$LINE" ]; then
-        PID=$(echo "$LINE" | awk '{print $3}')
-        kill $PID
-        sed -i "\|^$PORT |d" "$DB_FILE"
-        echo "🛑 Tunnel on port $PORT stopped."
+  PORT=$1
+  TMP=$(mktemp)
+  FOUND=0
+  while IFS=: read -r LPORT RPORT PID; do
+    if [[ "$LPORT" == "$PORT" ]]; then
+      kill "$PID" 2>/dev/null
+      echo "🛑 stopped tunnel: localhost:$LPORT (remote $SERVER:$RPORT)"
+      FOUND=1
     else
-        echo "⚠️ No tunnel found on port $PORT"
+      echo "$LPORT:$RPORT:$PID" >> "$TMP"
     fi
+  done < "$DB_FILE"
+  mv "$TMP" "$DB_FILE"
+  [[ $FOUND -eq 0 ]] && echo "⚠️ no tunnel found for port $PORT"
 }
 
 stop_all() {
-    while read -r LINE; do
-        PID=$(echo "$LINE" | awk '{print $3}')
-        kill $PID 2>/dev/null
-    done <"$DB_FILE"
-    >"$DB_FILE"
-    echo "🛑 All tunnels stopped."
+  while IFS=: read -r LPORT RPORT PID; do
+    kill "$PID" 2>/dev/null
+    echo "🛑 killed tunnel: localhost:$LPORT (remote $SERVER:$RPORT)"
+  done < "$DB_FILE"
+  > "$DB_FILE"
+}
+
+list_tunnels() {
+  if [[ ! -s "$DB_FILE" ]]; then
+    echo "ℹ️ no active tunnels rn 😭"
+    return
+  fi
+  echo "🔁 active tunnels:"
+  while IFS=: read -r LPORT RPORT PID; do
+    if ps -p "$PID" > /dev/null 2>&1; then
+      echo " - $SERVER:$RPORT ➜ localhost:$LPORT (pid $PID)"
+    else
+      echo " - $SERVER:$RPORT ➜ localhost:$LPORT (dead ❌)"
+    fi
+  done < "$DB_FILE"
 }
 
 reset() {
-    stop_all
-    rm -f "$DB_FILE"
-    echo "🔄 Database reset."
+  echo "⚠️ this will kill ALL ssh procs + wipe DB. continue? (y/n)"
+  read -r CONFIRM
+  if [[ "$CONFIRM" =~ ^[Yy]$ ]]; then
+    pkill -9 ssh 2>/dev/null
+    > "$DB_FILE"
+    echo "🧼 reset done"
+  else
+    echo "🚫 reset cancelled"
+  fi
+}
+
+print_help() {
+  echo "🧪 port tunnel helper"
+  echo "usage:"
+  echo "  port add <local_port>     create tunnel (remote port auto-alloc)"
+  echo "  port stop <local_port>    stop specific tunnel"
+  echo "  port stop all             kill all tunnels"
+  echo "  port list tunnels         show active tunnels"
+  echo "  port reset                kill ALL ssh procs + wipe DB"
+  echo "  port help                 show this help"
 }
 
 case "$1" in
-    setup) setup ;;
-    add) add_tunnel "$2" ;;
-    list) list_tunnels ;;
-    stop) stop_tunnel "$2" ;;
-    "stop all") stop_all ;;
-    reset) reset ;;
-    *) echo "Usage: port {setup|add <port>|list|stop <port>|stop all|reset}" ;;
+  add)
+    [[ -n "$2" ]] && add_tunnel "$2" || echo "usage: port add <local_port>"
+    ;;
+  stop)
+    if [[ "$2" == "all" ]]; then
+      stop_all
+    elif [[ -n "$2" ]]; then
+      stop_tunnel "$2"
+    else
+      echo "usage: port stop <local_port|all>"
+    fi
+    ;;
+  list)
+    [[ "$2" == "tunnels" ]] && list_tunnels || echo "usage: port list tunnels"
+    ;;
+  reset) reset ;;
+  help) print_help ;;
+  *) echo "❓ unknown command: $1"; echo "try: port help" ;;
 esac
