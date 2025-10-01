@@ -21,7 +21,8 @@ RST="\e[0m"
 banner() {
   echo -e "${CYN}"
   echo "╔══════════════════════════════╗"
-  echo "║                    HycroeDev                   ║"
+  echo "║         Tunnel Manager       ║"
+  echo "║         by HycroeDev         ║"
   echo "╚══════════════════════════════╝"
   echo -e "${RST}"
 }
@@ -33,6 +34,13 @@ add_tunnel() {
   # Validate port number
   if ! [[ "$LOCAL_PORT" =~ ^[0-9]+$ ]] || [ "$LOCAL_PORT" -lt 1 ] || [ "$LOCAL_PORT" -gt 65535 ]; then
     echo -e "❌ ${RED}Invalid port number: $LOCAL_PORT${RST}"
+    return 1
+  fi
+
+  # Check if SSH key exists
+  if [ ! -f "$SSH_KEY" ]; then
+    echo -e "❌ ${RED}SSH key not found: $SSH_KEY${RST}"
+    echo -e "💡 ${YEL}Generate one with: ssh-keygen -t ed25519 -f ~/.ssh/tunnel_key -N ''${RST}"
     return 1
   fi
 
@@ -77,7 +85,7 @@ add_tunnel() {
     kill "$SSH_PID" 2>/dev/null
     echo ""
     echo -e "💡 ${YEL}Troubleshooting:${RST}"
-    echo -e "   • Check if SSH key is properly setup"
+    echo -e "   • Check if SSH key is properly setup on tunnel server"
     echo -e "   • Verify tunnel server configuration"
     echo -e "   • Check network connectivity"
   fi
@@ -187,7 +195,7 @@ status() {
   
   # Test connection
   echo -e "${YEL}Testing connection to tunnel server...${RST}"
-  if ssh -o ConnectTimeout=5 -o BatchMode=yes -i "$SSH_KEY" $USER@$SERVER "echo '✅ Connected'" 2>/dev/null; then
+  if ssh -o ConnectTimeout=5 -o BatchMode=yes -i "$SSH_KEY" $USER@$SERVER "echo Connected" 2>/dev/null; then
     echo -e "✅ ${GRN}Connection test: SUCCESS${RST}"
   else
     echo -e "❌ ${RED}Connection test: FAILED${RST}"
