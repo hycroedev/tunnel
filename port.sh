@@ -4,7 +4,6 @@
 DB_FILE="/tmp/port_tunnels.db"
 SERVER="137.175.89.137"
 USER="tunnel"
-SSH_KEY="$HOME/.ssh/tunnel_key"
 # ==========================
 
 mkdir -p /tmp
@@ -37,13 +36,6 @@ add_tunnel() {
     return 1
   fi
 
-  # Check if SSH key exists
-  if [ ! -f "$SSH_KEY" ]; then
-    echo -e "❌ ${RED}SSH key not found: $SSH_KEY${RST}"
-    echo -e "💡 ${YEL}Generate one with: ssh-keygen -t ed25519 -f ~/.ssh/tunnel_key -N ''${RST}"
-    return 1
-  fi
-
   # Verify local service is reachable
   echo -e "${YEL}Checking local service on port $LOCAL_PORT...${RST}"
   if ! timeout 1 bash -c "echo > /dev/tcp/localhost/$LOCAL_PORT" 2>/dev/null; then
@@ -53,9 +45,9 @@ add_tunnel() {
 
   echo -e "${YEL}Creating tunnel...${RST}"
   
-  # Use SSH key authentication
-  ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-      -i "$SSH_KEY" -N -R 0:localhost:$LOCAL_PORT $USER@$SERVER >"$TMPFILE" 2>&1 &
+  # Use password authentication
+  sshpass -p "G7k@pL9z" ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+      -N -R 0:localhost:$LOCAL_PORT $USER@$SERVER >"$TMPFILE" 2>&1 &
   SSH_PID=$!
 
   # Wait for port allocation
@@ -81,7 +73,7 @@ add_tunnel() {
   else
     echo -e "❌ ${RED}Tunnel Creation Failed!${RST}"
     echo -e "${YEL}Debug information:${RST}"
-    cat "$TMPFILE"
+    grep -v "^Warning:" "$TMPFILE"
     kill "$SSH_PID" 2>/dev/null
     echo ""
     echo -e "💡 ${YEL}Troubleshooting:${RST}"
@@ -181,28 +173,17 @@ reset() {
 }
 
 status() {
-  if [ ! -f "$SSH_KEY" ]; then
-    echo -e "❌ ${RED}SSH key not found: $SSH_KEY${RST}"
-    echo -e "💡 ${YEL}Generate one with: ssh-keygen -t ed25519 -f ~/.ssh/tunnel_key -N ''${RST}"
-    return 1
-  fi
-
   echo -e "${GRN}🔧 System Status:${RST}"
-  echo -e "   ${YEL}SSH Key:${RST} $( [ -f "$SSH_KEY" ] && echo "✅ Found" || echo "❌ Missing" )"
   echo -e "   ${YEL}DB File:${RST} $( [ -f "$DB_FILE" ] && echo "✅ Found" || echo "❌ Missing" )"
   echo -e "   ${YEL}Tunnel Server:${RST} $SERVER"
   echo -e "   ${YEL}Tunnel User:${RST} $USER"
   
   # Test connection
   echo -e "${YEL}Testing connection to tunnel server...${RST}"
-  if ssh -o ConnectTimeout=5 -o BatchMode=yes -i "$SSH_KEY" $USER@$SERVER "echo Connected" 2>/dev/null; then
+  if sshpass -p "G7k@pL9z" ssh -o ConnectTimeout=5 -o BatchMode=yes $USER@$SERVER "echo Connected" 2>/dev/null; then
     echo -e "✅ ${GRN}Connection test: SUCCESS${RST}"
   else
     echo -e "❌ ${RED}Connection test: FAILED${RST}"
-    echo -e "💡 ${YEL}Check:${RST}"
-    echo -e "   • SSH key setup on tunnel server"
-    echo -e "   • Network connectivity"
-    echo -e "   • Tunnel server configuration"
   fi
 }
 
