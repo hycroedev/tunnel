@@ -1,14 +1,32 @@
 #!/bin/bash
 
-# ========= SELF-CONTAINED INSTALL FOR TUNNEL MANAGER =========
-# Embed port.sh inside, no external download needed.
+# ========= FULLY AUTO INSTALL FOR TUNNEL MANAGER =========
+# Handles deps (sshpass), embeds port.sh, installs everything.
 # Run: bash <(curl -s https://raw.githubusercontent.com/hycroedev/port-forwarding-tool/main/install.sh)
 
 set -e  # Exit on error
 
-echo "🚀 Installing Tunnel Manager (port tool)..."
+echo "🚀 Installing Tunnel Manager (port tool) with deps..."
 
-# Embedded port.sh content (full script here - same as before)
+# Step 1: Install deps (sshpass) - Auto detect package manager
+if command -v apt >/dev/null 2>&1; then
+  echo "💡 Debian/Ubuntu detected. Installing sshpass..."
+  apt update -qq >/dev/null 2>&1
+  if ! dpkg -l | grep -q sshpass; then
+    if [[ $EUID -ne 0 ]]; then
+      sudo DEBIAN_FRONTEND=noninteractive apt install -y sshpass >/dev/null 2>&1
+    else
+      DEBIAN_FRONTEND=noninteractive apt install -y sshpass >/dev/null 2>&1
+    fi
+  fi
+  echo "✅ sshpass installed/checked."
+elif command -v yum >/dev/null 2>&1 || command -v dnf >/dev/null 2>&1; then
+  echo "⚠️ RPM distro? Manual sshpass install cheyyu (not auto)."
+else
+  echo "⚠️ Unknown distro. Manual: sudo apt/yum install sshpass"
+fi
+
+# Step 2: Embedded port.sh content (full script - same as before, minor tweaks)
 cat > /tmp/port.sh << 'EOF'
 #!/bin/bash
 
@@ -99,7 +117,7 @@ add_tunnel() {
   echo -e "${YEL}Tunnel create...${RST}"
   
   if [ "$USE_PASSWORD" = true ] && [ -n "$PASSWORD" ]; then
-    command -v sshpass >/dev/null || { echo "❌ sshpass illa. sudo apt install sshpass"; return 1; }
+    command -v sshpass >/dev/null || { echo "❌ sshpass illa. Install: sudo apt install sshpass"; return 1; }
     sshpass -p "$PASSWORD" ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
         -N -R 0:localhost:$LOCAL_PORT $USER@$SERVER >"$TMPFILE" 2>&1 &
   else
@@ -293,12 +311,12 @@ EOF
 # Make executable
 chmod +x /tmp/port.sh
 
-# Install (remove old first - FIX!)
+# Install (remove old first)
 INSTALL_PATH="/usr/local/bin/port"
-rm -f "$INSTALL_PATH"  # Clear dangling symlink
+rm -f "$INSTALL_PATH"  # Clear any broken links
 
 if [[ $EUID -ne 0 ]]; then
-  echo "💡 Sudo venam."
+  echo "💡 Sudo venam for install."
   sudo cp /tmp/port.sh "$INSTALL_PATH" && sudo chmod +x "$INSTALL_PATH"
 else
   cp /tmp/port.sh "$INSTALL_PATH"
@@ -308,7 +326,8 @@ fi
 # Cleanup
 rm -f /tmp/port.sh
 
-echo "✅ Installed! 'port help' run for help."
+echo "✅ Fully installed with deps! 'port help' run cheyyu."
+echo "💡 First time: Auto setup prompt (server IP, user, pass/key)."
 echo ""
 echo "Quick test:"
 $INSTALL_PATH help
