@@ -8,7 +8,7 @@ set -e  # Exit on error
 
 echo "🚀 Installing Tunnel Manager (port tool)..."
 
-# Embedded port.sh content (full script here)
+# Embedded port.sh content (full script here - same as before)
 cat > /tmp/port.sh << 'EOF'
 #!/bin/bash
 
@@ -293,8 +293,10 @@ EOF
 # Make executable
 chmod +x /tmp/port.sh
 
-# Install (copy, not link - permanent)
+# Install (remove old first - FIX!)
 INSTALL_PATH="/usr/local/bin/port"
+rm -f "$INSTALL_PATH"  # Clear dangling symlink
+
 if [[ $EUID -ne 0 ]]; then
   echo "💡 Sudo venam."
   sudo cp /tmp/port.sh "$INSTALL_PATH" && sudo chmod +x "$INSTALL_PATH"
@@ -306,8 +308,7 @@ fi
 # Cleanup
 rm -f /tmp/port.sh
 
-echo "✅ Installed! 'port help' run cheyyu."
-echo "💡 First time setup prompt varum (server, pass/key)."
+echo "✅ Installed! 'port help' run for help."
 echo ""
 echo "Quick test:"
 $INSTALL_PATH help
