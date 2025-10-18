@@ -1,47 +1,15 @@
 #!/bin/bash
 
-# ========= FULLY AUTO INSTALL FOR TUNNEL MANAGER =========
-# Handles deps (sshpass), embeds port.sh, installs everything.
-# Run: bash <(curl -s https://raw.githubusercontent.com/hycroedev/port-forwarding-tool/main/install.sh)
-
-set -e  # Exit on error
-
-echo "🚀 Installing Tunnel Manager (port tool) with dependencies..."
-
-# Step 1: Install dependencies (sshpass) - Auto-detect package manager
-if command -v apt >/dev/null 2>&1; then
-  echo "💡 Debian/Ubuntu detected. Installing sshpass..."
-  apt update -qq >/dev/null 2>&1
-  if ! dpkg -l | grep -q sshpass; then
-    if [[ $EUID -ne 0 ]]; then
-      sudo DEBIAN_FRONTEND=noninteractive apt install -y sshpass >/dev/null 2>&1
-    else
-      DEBIAN_FRONTEND=noninteractive apt install -y sshpass >/dev/null 2>&1
-    fi
-  fi
-  echo "✅ sshpass installed/checked."
-elif command -v yum >/dev/null 2>&1 || command -v dnf >/dev/null 2>&1; then
-  echo "⚠️ RPM-based distro detected. Install sshpass manually (e.g., sudo yum install sshpass)."
-  exit 1
-else
-  echo "⚠️ Unknown distro detected. Install sshpass manually (e.g., sudo apt install sshpass)."
-  exit 1
-fi
-
-# Step 2: Embed the full port.sh content
-cat > /tmp/port.sh << 'EOF'
-#!/bin/bash
-
 # ========= CONFIG =========
 DB_FILE="/tmp/port_tunnels.db"
 SERVER="${TUNNEL_SERVER:-137.175.89.75}"
 USER="${TUNNEL_USER:-tunnel}"
-PASSWORD="${TUNNEL_PASSWORD}"  # Set via export TUNNEL_PASSWORD=yourpass
-SSH_KEY="${HOME}/.ssh/tunnel_key"  # Use key if exists
-USE_PASSWORD=true  # Auto-detect: if key exists, use false
+PASSWORD="${TUNNEL_PASSWORD:-G7k@pL9z}"  # Default password - CHANGE THIS for security!
+SSH_KEY="${HOME}/.ssh/tunnel_key"  # Use key if exists (overrides password)
+USE_PASSWORD=true  # Default to password; set to false if key preferred
 [ -f ~/.tunnelrc ] && source ~/.tunnelrc
 
-# Auto-detect SSH method
+# Auto-detect: Prefer key if it exists
 if [ -f "$SSH_KEY" ]; then
   USE_PASSWORD=false
 fi
@@ -66,8 +34,8 @@ banner() {
   echo -e "${RST}"
 }
 
-# Auto-setup if first run
-if [[ "$1" == "" ]] || [[ "$1" == "help" ]] && [ ! -f "$DB_FILE" ]; then
+# Auto-setup if first run (only if no config/DB)
+if [[ "$1" == "" ]] || [[ "$1" == "help" ]] && [ ! -f "$DB_FILE" ] && [ ! -f ~/.tunnelrc ]; then
   banner
   echo -e "${YEL}🚀 First-time setup! Configuring...${RST}"
   echo -ne "Server IP (default: $SERVER): "; read -r INPUT_SERVER
@@ -80,6 +48,7 @@ if [[ "$1" == "" ]] || [[ "$1" == "help" ]] && [ ! -f "$DB_FILE" ]; then
   if [[ "$CHOICE" =~ ^[kK]$ ]]; then
     if [ ! -f "$SSH_KEY" ]; then
       echo -e "${YEL}Generating SSH key...${RST}"
+      mkdir -p "$(dirname "$SSH_KEY")"
       ssh-keygen -t ed25519 -f "$SSH_KEY" -N "" -q
     fi
     echo -e "${GRN}Public key (add to server ~/.ssh/authorized_keys):${RST}"
@@ -129,6 +98,7 @@ add_tunnel() {
   fi
   local SSH_PID=$!
 
+  # Wait for port allocation
   for i in {1..10}; do
     if grep -q "Allocated port" "$TMPFILE"; then
       break
@@ -243,6 +213,7 @@ status() {
   echo -e "   ${YEL}DB File: ${RST}$( [ -f "$DB_FILE" ] && echo "✅ Found" || echo "❌ Missing" )"
   echo -e "   ${YEL}Server: ${RST}$SERVER"
   echo -e "   ${YEL}User: ${RST}$USER"
+  echo -e "   ${YEL}Auth: ${RST}$( [ "$USE_PASSWORD" = true ] && echo "Password" || echo "SSH Key" )"
   
   echo -e "${YEL}Testing connection to server...${RST}"
   if [ "$USE_PASSWORD" = true ] && [ -n "$PASSWORD" ]; then
@@ -273,6 +244,7 @@ print_help() {
   echo -e "  ${CYN}port list tunnels${RST}"
   echo ""
   echo -e "${YEL}Tip: Share the remote address with friends to access your service!${RST}"
+  echo -e "${RED}Security Note: Default password is set - change it in ~/.tunnelrc!${RST}"
 }
 
 # Main
@@ -308,28 +280,3 @@ case "$1" in
     exit 1
     ;;
 esac
-EOF
-
-# Make executable
-chmod +x /tmp/port.sh
-
-# Install (remove old first)
-INSTALL_PATH="/usr/local/bin/port"
-rm -f "$INSTALL_PATH"  # Clear any broken symlinks
-
-if [[ $EUID -ne 0 ]]; then
-  echo "💡 Sudo required for installation."
-  sudo cp /tmp/port.sh "$INSTALL_PATH" && sudo chmod +x "$INSTALL_PATH"
-else
-  cp /tmp/port.sh "$INSTALL_PATH"
-  chmod +x "$INSTALL_PATH"
-fi
-
-# Cleanup
-rm -f /tmp/port.sh
-
-echo "✅ Installation complete with dependencies! Run 'port help' to start."
-echo "💡 First time: It will prompt for server config (IP, user, password/SSH key)."
-echo ""
-echo "Quick test:"
-$INSTALL_PATH help
