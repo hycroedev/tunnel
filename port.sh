@@ -2,7 +2,7 @@
 
 # ========= CONFIG =========
 DB_FILE="/tmp/port_tunnels.db"
-SERVER="137.175.89.137"
+SERVER="137.175.89.75"
 USER="tunnel"
 # ==========================
 
