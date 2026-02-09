@@ -1,66 +1,59 @@
 #!/bin/bash
 
-# ===== CONFIG =====
-REMOTE_HOST="181.224.60.58"
-REMOTE_USER="tunnel"
+# ================= CONFIG =================
+SERVER="181.224.60.58"
+USER="tunnel"
+PASSWORD="lol"          # risk ok enkil ivide password
 SSH_PORT=22
-PASSWORD="lol"          # yes insecure, you said IDC
-LOG_DIR="/tmp"
-BIN_NAME="tunnel"
+LOG_DIR="/tmp/tunnel"
+mkdir -p "$LOG_DIR"
 
-# ===== COLORS =====
-G="\e[32m"; R="\e[31m"; Y="\e[33m"; C="\e[36m"; N="\e[0m"
+# ================= COLORS =================
+RED="\e[31m"
+GRN="\e[32m"
+YEL="\e[33m"
+CYN="\e[36m"
+RST="\e[0m"
 
-usage() {
-  echo -e "${C}Usage:${N}"
-  echo "  tunnel <local_port>"
-  echo "  tunnel list"
-  echo "  tunnel stop <pid>"
+# ================= CHECK =================
+if [ -z "$1" ]; then
+  echo -e "${YEL}Usage:${RST} tunnel <local_port>"
   exit 1
-}
-
-[ -z "$1" ] && usage
-
-case "$1" in
-  list)
-    pgrep -af "ssh.*-R.*$REMOTE_HOST" || echo "No tunnels"
-    exit 0
-    ;;
-  stop)
-    [ -z "$2" ] && usage
-    kill "$2" && echo "Stopped $2" || echo "Failed"
-    exit 0
-    ;;
-esac
+fi
 
 LOCAL_PORT="$1"
-LOG="$LOG_DIR/tunnel_${LOCAL_PORT}.log"
 
-# ===== START TUNNEL =====
-echo -e "${Y}Starting tunnel for localhost:${LOCAL_PORT}...${N}"
+if ! [[ "$LOCAL_PORT" =~ ^[0-9]+$ ]]; then
+  echo -e "${RED}Invalid port${RST}"
+  exit 1
+fi
 
-nohup sshpass -p "$PASSWORD" ssh \
+# ================= START =================
+echo -e "${CYN}🚇 Hycroe Tunnel${RST}"
+echo -e "${YEL}Starting tunnel for localhost:${LOCAL_PORT} ...${RST}"
+
+LOG_FILE="$LOG_DIR/$LOCAL_PORT.log"
+
+# ================= SSH TUNNEL =================
+sshpass -p "$PASSWORD" ssh \
   -o StrictHostKeyChecking=no \
   -o UserKnownHostsFile=/dev/null \
   -o ExitOnForwardFailure=yes \
-  -o ServerAliveInterval=60 \
-  -N -R 0:localhost:$LOCAL_PORT \
-  ${REMOTE_USER}@${REMOTE_HOST} \
-  > "$LOG" 2>&1 &
+  -N -f \
+  -R 0:localhost:$LOCAL_PORT \
+  $USER@$SERVER \
+  -p $SSH_PORT \
+  >"$LOG_FILE" 2>&1
 
-PID=$!
+sleep 1
 
-# ===== WAIT FOR PORT =====
-sleep 2
-
-if grep -q "Allocated port" "$LOG"; then
-  RPORT=$(grep "Allocated port" "$LOG" | grep -oE '[0-9]+')
-  echo -e "${G}SUCCESS${N}"
-  echo "PID: $PID"
-  echo "Public: ${REMOTE_HOST}:${RPORT}"
-  echo "Log: $LOG"
+# ================= RESULT =================
+if grep -q "Allocated port" "$LOG_FILE"; then
+  REMOTE_PORT=$(grep "Allocated port" "$LOG_FILE" | grep -oE '[0-9]{4,5}')
+  echo -e "${GRN}✅ Tunnel Active${RST}"
+  echo -e "${CYN}Public:${RST} $SERVER:$REMOTE_PORT"
 else
-  echo -e "${R}FAILED${N}"
-  echo "Check log:"
-  cat "$LOG"
+  echo -e "${RED}❌ Tunnel FAILED${RST}"
+  echo -e "${YEL}Log:${RST}"
+  cat "$LOG_FILE"
 fi
