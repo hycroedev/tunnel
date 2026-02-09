@@ -1,69 +1,8 @@
 #!/bin/bash
-# Simple Tunnel Script
-# https://github.com/hycroedev/tunnel
+PASS="lol"
+SERVER="181.224.60.58"
+USER="tunnel"
+PORT="$1"
 
-VPS_IP="181.224.60.58"  # ← CHANGE THIS TO YOUR VPS IP
-VPS_USER="tunneluser"
-
-# Help menu
-if [ "$1" == "help" ] || [ "$1" == "" ]; then
-    echo "=== SIMPLE TUNNEL ==="
-    echo "Usage:"
-    echo "  tunnel make 22        → Forward port 22"
-    echo "  tunnel make 25565     → Forward Minecraft"
-    echo "  tunnel stop           → Stop all tunnels"
-    echo ""
-    echo "Example: 'tunnel make 22' gives: $VPS_IP:54321"
-    exit 0
-fi
-
-# Generate SSH key if first time
-if [ ! -f ~/.ssh/tunnel_key ]; then
-    echo "First time setup..."
-    ssh-keygen -t ed25519 -f ~/.ssh/tunnel_key -N "" -q
-    echo ""
-    echo "=== SEND THIS KEY TO VPS OWNER ==="
-    cat ~/.ssh/tunnel_key.pub
-    echo "=================================="
-    echo "Send the key above to VPS owner!"
-    exit 0
-fi
-
-# Make tunnel
-if [ "$1" == "make" ]; then
-    if [ -z "$2" ]; then
-        echo "Error: Need port number"
-        echo "Example: tunnel make 22"
-        exit 1
-    fi
-    
-    LOCAL_PORT=$2
-    # Generate random port 20000-50000
-    PUBLIC_PORT=$(( RANDOM % 30000 + 20000 ))
-    
-    echo "Creating tunnel..."
-    echo "Your local port: $LOCAL_PORT"
-    
-    # Start SSH tunnel
-    ssh -i ~/.ssh/tunnel_key \
-        -o StrictHostKeyChecking=no \
-        -N -R $PUBLIC_PORT:localhost:$LOCAL_PORT \
-        $VPS_USER@$VPS_IP &
-    
-    echo "✅ DONE!"
-    echo "Connect to: $VPS_IP:$PUBLIC_PORT"
-    echo "This forwards to your local port $LOCAL_PORT"
-    echo "PID: $! (use 'tunnel stop' to kill)"
-fi
-
-# Stop tunnels
-if [ "$1" == "stop" ]; then
-    pkill -f "ssh.*$VPS_USER@$VPS_IP"
-    echo "All tunnels stopped"
-fi
-
-# List tunnels
-if [ "$1" == "list" ]; then
-    echo "Active tunnels:"
-    ps aux | grep "ssh.*$VPS_USER" | grep -v grep || echo "None"
-fi
+sshpass -p "$PASS" ssh -o StrictHostKeyChecking=no \
+  -N -R 0:localhost:$PORT $USER@$SERVER
