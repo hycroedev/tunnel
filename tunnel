@@ -1,170 +1,69 @@
 #!/bin/bash
+# Simple Tunnel Script
+# https://github.com/hycroedev/tunnel
 
-#==============================================================================#
-#                                                                              #
-#                                 🚇 TunnelMaster 🚇                           #
-#           A cool and friendly script for creating reverse SSH tunnels.       #
-#                                                                              #
-#==============================================================================#
+VPS_IP="181.224.60.58"  # ← CHANGE THIS TO YOUR VPS IP
+VPS_USER="tunneluser"
 
-# --- Configuration ---
-# CHANGE THESE 3 LINES WITH YOUR VPS!
-REMOTE_HOST="181.224.60.58"      # ← YOUR VPS IP
-REMOTE_USER="root"               # ← Your VPS username
-SSH_PORT="22"                    # ← SSH port (usually 22)
-
-# --- Colors and Emojis ---
-# Making the output vibrant and clear!
-C_RESET='\033[0m'
-C_RED='\033[0;31m'
-C_GREEN='\033[0;32m'
-C_YELLOW='\033[0;33m'
-C_BLUE='\033[0;34m'
-C_PURPLE='\033[0;35m'
-C_CYAN='\033[0;36m'
-C_WHITE='\033[1;37m'
-
-EMOJI_TUNNEL="🚇"
-EMOJI_SPARKLE="✨"
-EMOJI_GEAR="⚙️"
-EMOJI_LINK="🔗"
-EMOJI_SUCCESS="✅"
-EMOJI_ERROR="❌"
-EMOJI_STOP="🛑"
-EMOJI_LIST="📋"
-EMOJI_WAVE="👋"
-
-# --- Helper Functions ---
-
-# Function to display the help/usage message
-usage() {
-    echo -e "${C_WHITE}🚇 TunnelMaster - a friendly tunnel manager${C_RESET}"
-    echo -e "${C_YELLOW}VPS: ${REMOTE_HOST}${C_RESET}"
-    echo -e "---------------------------------------------------"
-    echo -e "${C_YELLOW}Usage:${C_RESET} ${C_CYAN}$0 ${C_PURPLE}<command> [options]${C_RESET}\n"
-    echo -e "${C_PURPLE}Commands:${C_RESET}"
-    echo -e "  ${C_CYAN}make <local_port>${C_RESET}   ${EMOJI_GEAR} Create a new tunnel from a local port."
-    echo -e "                         Example: ${C_CYAN}$0 make 8080${C_RESET}\n"
-    echo -e "  ${C_CYAN}list${C_RESET}                ${EMOJI_LIST} List all active tunnels created by this script.\n"
-    echo -e "  ${C_CYAN}kill <pid>${C_RESET}          ${EMOJI_STOP} Stop a specific tunnel by its PID."
-    echo -e "                         Example: ${C_CYAN}$0 kill 12345${C_RESET}\n"
-    echo -e "  ${C_CYAN}killall${C_RESET}             ${EMOJI_STOP} Stop all active tunnels.\n"
-    echo -e "  ${C_CYAN}help${C_RESET}                ${EMOJI_WAVE} Show this help message."
-    echo -e "---------------------------------------------------"
-}
-
-# --- Main Logic ---
-
-# Check for a command
-if [ -z "$1" ]; then
-    usage
-    exit 1
+# Help menu
+if [ "$1" == "help" ] || [ "$1" == "" ]; then
+    echo "=== SIMPLE TUNNEL ==="
+    echo "Usage:"
+    echo "  tunnel make 22        → Forward port 22"
+    echo "  tunnel make 25565     → Forward Minecraft"
+    echo "  tunnel stop           → Stop all tunnels"
+    echo ""
+    echo "Example: 'tunnel make 22' gives: $VPS_IP:54321"
+    exit 0
 fi
 
-case "$1" in
-    make)
-        LOCAL_PORT=$2
-        # Validate that a local port was provided and is a number
-        if [[ -z "$LOCAL_PORT" || ! "$LOCAL_PORT" =~ ^[0-9]+$ ]]; then
-            echo -e "\n${EMOJI_ERROR} ${C_RED}Error: You must provide a valid local port number.${C_RESET}"
-            echo -e "Example: ${C_CYAN}$0 make 80${C_RESET}\n"
-            exit 1
-        fi
+# Generate SSH key if first time
+if [ ! -f ~/.ssh/tunnel_key ]; then
+    echo "First time setup..."
+    ssh-keygen -t ed25519 -f ~/.ssh/tunnel_key -N "" -q
+    echo ""
+    echo "=== SEND THIS KEY TO VPS OWNER ==="
+    cat ~/.ssh/tunnel_key.pub
+    echo "=================================="
+    echo "Send the key above to VPS owner!"
+    exit 0
+fi
 
-        # Generate a random remote port between 10000 and 65535
-        REMOTE_PORT=$(( RANDOM % 55535 + 10000 ))
-
-        echo -e "\n${EMOJI_TUNNEL} ${C_BLUE}Creating tunnel to your VPS...${C_RESET}"
-        echo -e "${EMOJI_GEAR} ${C_YELLOW}Connecting to: ${C_WHITE}${REMOTE_HOST}${C_RESET}"
-        echo -e "${EMOJI_LINK} ${C_CYAN}Forwarding:${C_RESET} Local Port ${C_WHITE}${LOCAL_PORT}${C_RESET} -> ${C_WHITE}${REMOTE_HOST}:${REMOTE_PORT}${C_RESET}\n"
-
-        # The magic command
-        nohup ssh -o StrictHostKeyChecking=no -o ExitOnForwardFailure=yes -o ServerAliveInterval=60 \
-            -N -R ${REMOTE_PORT}:localhost:${LOCAL_PORT} \
-            ${REMOTE_USER}@${REMOTE_HOST} -p ${SSH_PORT} &> /tmp/tunnel_${REMOTE_PORT}.log &
-
-        PID=$!
-        
-        # Give it a moment to establish or fail
-        sleep 2
-
-        # Check if the process is still running
-        if ps -p $PID > /dev/null; then
-            echo -e "${EMOJI_SUCCESS} ${C_GREEN}Success! Tunnel is active.${C_RESET}"
-            echo -e "  ${C_WHITE}PID:${C_RESET} ${C_YELLOW}${PID}${C_RESET}"
-            echo -e "  ${C_WHITE}Public URL:${C_RESET} ${C_CYAN}http://${REMOTE_HOST}:${REMOTE_PORT}${C_RESET}"
-            echo -e "  ${C_WHITE}Log:${C_RESET} /tmp/tunnel_${REMOTE_PORT}.log"
-            echo -e "\n${EMOJI_STOP} To stop: ${C_PURPLE}tunnel kill ${PID}${C_RESET}"
-            echo -e "${C_YELLOW}Share this URL with anyone!${C_RESET}\n"
-        else
-            echo -e "${EMOJI_ERROR} ${C_RED}Tunnel failed to start.${C_RESET}"
-            echo -e "  Check: ${C_YELLOW}cat /tmp/tunnel_${REMOTE_PORT}.log${C_RESET}\n"
-            [ ! -s "/tmp/tunnel_${REMOTE_PORT}.log" ] && rm "/tmp/tunnel_${REMOTE_PORT}.log"
-        fi
-        ;;
-
-    list)
-        echo -e "\n${EMOJI_LIST} ${C_BLUE}Active tunnels to ${C_WHITE}${REMOTE_HOST}${C_RESET}..."
-        
-        PIDS=$(pgrep -af "ssh.*-R.*${REMOTE_HOST}")
-        
-        if [ -n "$PIDS" ]; then
-            echo -e "------------------------------------------------------------------"
-            echo -e "${C_WHITE}PID\t\tREMOTE PORT\t\tLOCAL PORT${C_RESET}"
-            echo -e "------------------------------------------------------------------"
-            while read -r line; do
-                pid=$(echo "$line" | awk '{print $1}')
-                remote_p=$(echo "$line" | sed -n 's/.*-R \([0-9]*\):.*/\1/p')
-                local_p=$(echo "$line" | sed -n 's/.*localhost:\([0-9]*\).*/\1/p')
-                echo -e "${C_YELLOW}${pid}${C_RESET}\t\t${C_CYAN}${remote_p}${C_RESET}\t\t\t${C_PURPLE}${local_p}${C_RESET}"
-            done <<< "$PIDS"
-            echo -e "------------------------------------------------------------------\n"
-        else
-            echo -e "${EMOJI_SPARKLE} ${C_GREEN}No active tunnels found.${C_RESET}\n"
-        fi
-        ;;
-
-    kill)
-        PID_TO_KILL=$2
-        if [[ -z "$PID_TO_KILL" || ! "$PID_TO_KILL" =~ ^[0-9]+$ ]]; then
-            echo -e "\n${EMOJI_ERROR} ${C_RED}Error: Provide a valid PID.${C_RESET}"
-            echo -e "Find PIDs: ${C_CYAN}$0 list${C_RESET}\n"
-            exit 1
-        fi
-
-        if ps -p $PID_TO_KILL > /dev/null; then
-            kill $PID_TO_KILL
-            echo -e "\n${EMOJI_STOP} ${C_GREEN}Stopped tunnel ${C_YELLOW}${PID_TO_KILL}${C_RESET}\n"
-        else
-            echo -e "\n${EMOJI_ERROR} ${C_RED}No process with PID ${C_YELLOW}${PID_TO_KILL}${C_RESET}\n"
-        fi
-        ;;
-
-    killall)
-        echo -e "\n${EMOJI_STOP} ${C_BLUE}Stopping all tunnels to ${C_WHITE}${REMOTE_HOST}${C_RESET}..."
-        PIDS_TO_KILL=$(pgrep -f "ssh.*-R.*${REMOTE_HOST}")
-        
-        if [ -n "$PIDS_TO_KILL" ]; then
-            echo -e "${C_YELLOW}Found:${C_RESET}"
-            pgrep -af "ssh.*-R.*${REMOTE_HOST}"
-            read -p "$(echo -e ${C_RED}"Stop all? [y/N] "${C_RESET})" confirm
-            if [[ "$confirm" =~ ^[yY](es)?$ ]]; then
-                kill $PIDS_TO_KILL
-                echo -e "\n${EMOJI_SUCCESS} ${C_GREEN}All tunnels stopped${C_RESET}\n"
-            else
-                echo -e "\n${C_YELLOW}Cancelled${C_RESET}\n"
-            fi
-        else
-            echo -e "${EMOJI_SPARKLE} ${C_GREEN}No tunnels to stop${C_RESET}\n"
-        fi
-        ;;
-
-    help)
-        usage
-        ;;
-
-    *)
-        usage
+# Make tunnel
+if [ "$1" == "make" ]; then
+    if [ -z "$2" ]; then
+        echo "Error: Need port number"
+        echo "Example: tunnel make 22"
         exit 1
-        ;;
-esac
+    fi
+    
+    LOCAL_PORT=$2
+    # Generate random port 20000-50000
+    PUBLIC_PORT=$(( RANDOM % 30000 + 20000 ))
+    
+    echo "Creating tunnel..."
+    echo "Your local port: $LOCAL_PORT"
+    
+    # Start SSH tunnel
+    ssh -i ~/.ssh/tunnel_key \
+        -o StrictHostKeyChecking=no \
+        -N -R $PUBLIC_PORT:localhost:$LOCAL_PORT \
+        $VPS_USER@$VPS_IP &
+    
+    echo "✅ DONE!"
+    echo "Connect to: $VPS_IP:$PUBLIC_PORT"
+    echo "This forwards to your local port $LOCAL_PORT"
+    echo "PID: $! (use 'tunnel stop' to kill)"
+fi
+
+# Stop tunnels
+if [ "$1" == "stop" ]; then
+    pkill -f "ssh.*$VPS_USER@$VPS_IP"
+    echo "All tunnels stopped"
+fi
+
+# List tunnels
+if [ "$1" == "list" ]; then
+    echo "Active tunnels:"
+    ps aux | grep "ssh.*$VPS_USER" | grep -v grep || echo "None"
+fi
