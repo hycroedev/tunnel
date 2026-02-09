@@ -14,5 +14,5 @@ nohup sshpass -p "$PASS" ssh \
   $USER@$SERVER \
   > /tmp/tunnel_$PORT.log 2>&1 &
 
-sleep 1
-grep "Allocated port" /tmp/tunnel_$PORT.log
+sleep 2
+tail -n 5 /tmp/tunnel_$PORT.log
