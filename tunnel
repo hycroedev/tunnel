@@ -1,18 +1,66 @@
 #!/bin/bash
 
-PORT="$1"
-SERVER="181.224.60.58"
-USER="tunnel"
-PASS="lol"
+# ===== CONFIG =====
+REMOTE_HOST="181.224.60.58"
+REMOTE_USER="tunnel"
+SSH_PORT=22
+PASSWORD="lol"          # yes insecure, you said IDC
+LOG_DIR="/tmp"
+BIN_NAME="tunnel"
 
-[ -z "$PORT" ] && echo "Usage: tunnel <port>" && exit 1
+# ===== COLORS =====
+G="\e[32m"; R="\e[31m"; Y="\e[33m"; C="\e[36m"; N="\e[0m"
 
-nohup sshpass -p "$PASS" ssh \
+usage() {
+  echo -e "${C}Usage:${N}"
+  echo "  tunnel <local_port>"
+  echo "  tunnel list"
+  echo "  tunnel stop <pid>"
+  exit 1
+}
+
+[ -z "$1" ] && usage
+
+case "$1" in
+  list)
+    pgrep -af "ssh.*-R.*$REMOTE_HOST" || echo "No tunnels"
+    exit 0
+    ;;
+  stop)
+    [ -z "$2" ] && usage
+    kill "$2" && echo "Stopped $2" || echo "Failed"
+    exit 0
+    ;;
+esac
+
+LOCAL_PORT="$1"
+LOG="$LOG_DIR/tunnel_${LOCAL_PORT}.log"
+
+# ===== START TUNNEL =====
+echo -e "${Y}Starting tunnel for localhost:${LOCAL_PORT}...${N}"
+
+nohup sshpass -p "$PASSWORD" ssh \
   -o StrictHostKeyChecking=no \
+  -o UserKnownHostsFile=/dev/null \
+  -o ExitOnForwardFailure=yes \
   -o ServerAliveInterval=60 \
-  -N -R 0:localhost:$PORT \
-  $USER@$SERVER \
-  > /tmp/tunnel_$PORT.log 2>&1 &
+  -N -R 0:localhost:$LOCAL_PORT \
+  ${REMOTE_USER}@${REMOTE_HOST} \
+  > "$LOG" 2>&1 &
 
+PID=$!
+
+# ===== WAIT FOR PORT =====
 sleep 2
-tail -n 5 /tmp/tunnel_$PORT.log
+
+if grep -q "Allocated port" "$LOG"; then
+  RPORT=$(grep "Allocated port" "$LOG" | grep -oE '[0-9]+')
+  echo -e "${G}SUCCESS${N}"
+  echo "PID: $PID"
+  echo "Public: ${REMOTE_HOST}:${RPORT}"
+  echo "Log: $LOG"
+else
+  echo -e "${R}FAILED${N}"
+  echo "Check log:"
+  cat "$LOG"
+fi
