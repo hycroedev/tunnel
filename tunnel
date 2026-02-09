@@ -1,88 +1,18 @@
 #!/bin/bash
 
+PORT="$1"
 SERVER="181.224.60.58"
 USER="tunnel"
 PASS="lol"
 
-DB="/tmp/tunnel.db"
+[ -z "$PORT" ] && echo "Usage: tunnel <port>" && exit 1
 
-GRN="\e[32m"; RED="\e[31m"; CYN="\e[36m"; YEL="\e[33m"; RST="\e[0m"
+nohup sshpass -p "$PASS" ssh \
+  -o StrictHostKeyChecking=no \
+  -o ServerAliveInterval=60 \
+  -N -R 0:localhost:$PORT \
+  $USER@$SERVER \
+  > /tmp/tunnel_$PORT.log 2>&1 &
 
-banner() {
-  echo -e "${CYN}"
-  echo "🚇 Hycroe Tunnel"
-  echo "Public Port Forwarding"
-  echo -e "${RST}"
-}
-
-make_tunnel() {
-  PORT="$1"
-
-  if [[ -z "$PORT" || ! "$PORT" =~ ^[0-9]+$ ]]; then
-    echo -e "${RED}Usage: tunnel <local_port>${RST}"
-    exit 1
-  fi
-
-  banner
-  echo -e "${YEL}⏳ Creating tunnel for localhost:$PORT ...${RST}"
-
-  nohup sshpass -p "$PASS" ssh \
-    -o StrictHostKeyChecking=no \
-    -o ServerAliveInterval=60 \
-    -N -R 0:localhost:$PORT \
-    $USER@$SERVER \
-    > /tmp/tunnel_$PORT.log 2>&1 &
-
-  PID=$!
-  sleep 1
-
-  REMOTE_PORT=$(grep -oE 'Allocated port [0-9]+' /tmp/tunnel_$PORT.log | awk '{print $3}')
-
-  if [[ -n "$REMOTE_PORT" ]]; then
-    echo "$PORT:$REMOTE_PORT:$PID" >> "$DB"
-    echo -e "${GRN}✅ Tunnel Active${RST}"
-    echo -e "${CYN}Local : localhost:$PORT${RST}"
-    echo -e "${CYN}Public: $SERVER:$REMOTE_PORT${RST}"
-    echo -e "${YEL}PID   : $PID${RST}"
-  else
-    echo -e "${RED}❌ Tunnel failed${RST}"
-    cat /tmp/tunnel_$PORT.log
-    kill $PID 2>/dev/null
-  fi
-}
-
-list_tunnels() {
-  banner
-  if [ ! -f "$DB" ]; then
-    echo "No tunnels"
-    exit 0
-  fi
-
-  while IFS=: read -r L R P; do
-    if ps -p "$P" >/dev/null; then
-      echo -e "${GRN}✔${RST} localhost:$L → $SERVER:$R (PID $P)"
-    fi
-  done < "$DB"
-}
-
-stop_tunnel() {
-  PORT="$1"
-  TMP=$(mktemp)
-
-  while IFS=: read -r L R P; do
-    if [ "$L" = "$PORT" ]; then
-      kill "$P"
-      echo -e "${RED}🛑 Stopped localhost:$L${RST}"
-    else
-      echo "$L:$R:$P" >> "$TMP"
-    fi
-  done < "$DB"
-
-  mv "$TMP" "$DB"
-}
-
-case "$1" in
-  list) list_tunnels ;;
-  stop) stop_tunnel "$2" ;;
-  *) make_tunnel "$1" ;;
-esac
+sleep 1
+grep "Allocated port" /tmp/tunnel_$PORT.log
